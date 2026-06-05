@@ -1,11 +1,40 @@
 const express = require("express");
 const axios = require("axios");
+const { getRTT } = require("./services/rttService");
 
 const {
   getCPU,
 } = require("./services/cloudwatchService");
 
+const regions =
+require("./config/regions");
+
+const {
+ getCarbonIntensity
+} =
+require("./services/carbonService");
+
 const app = express();
+
+app.get("/rtt", async (req, res) => {
+
+  try {
+
+    const rtt = await getRTT();
+
+    res.json({
+      rtt
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+
+  }
+
+});
 
 app.get("/", (req, res) => {
   res.json({
@@ -48,47 +77,52 @@ app.get("/rtt", async (req, res) => {
 });
 
 app.get("/metrics", async (req, res) => {
+
   try {
-    // RTT
-    const start = Date.now();
 
-    await axios.get("https://aws.amazon.com");
-
-    const rtt = Date.now() - start;
-
-    // CPU
-    const cpu = await getCPU();
-
-    // Carbon Intensity
-    const carbonResponse = await axios.get(
-      "https://api.electricitymap.org/v3/carbon-intensity/latest",
-      {
-        headers: {
-          "auth-token": process.env.ELECTRICITY_MAPS_API_KEY,
-        },
-        params: {
-          zone: "SE", // change if needed
-        },
-      }
+    const region = regions.find(
+      r => r.awsRegion === "eu-north-1"
     );
 
-    const carbon = carbonResponse.data.carbonIntensity;
+    const cpu = await getCPU();
+
+    const rtt = await getRTT(
+      "https://aws.amazon.com"
+    );
+
+    const carbonData =
+      await getCarbonIntensity(
+        region.zone
+      );
 
     res.json({
-      region: "eu-north-1",
-      timestamp: new Date().toISOString(),
+
+      region: region.awsRegion,
+
+      name: region.name,
+
+      timestamp:
+        new Date().toISOString(),
+
       cpu,
+
       rtt,
-      carbon,
+
+      carbon:
+        carbonData?.carbonIntensity
+
     });
 
   } catch (error) {
+
     console.error(error);
 
     res.status(500).json({
-      error: error.message,
+      error: error.message
     });
+
   }
+
 });
 
 app.get("/carbon", async (req, res) => {
@@ -116,6 +150,48 @@ app.get("/carbon", async (req, res) => {
         });
 
     }
+
+});
+
+app.get(
+"/all-carbon",
+async (req,res)=>{
+
+try{
+
+ const results=[];
+
+ for(const region of regions){
+
+   const data=
+   await getCarbonIntensity(
+    region.zone
+   );
+
+   results.push({
+
+    region:
+    region.awsRegion,
+
+    name:
+    region.name,
+
+    carbon:
+    data?.carbonIntensity
+
+   });
+
+ }
+
+ res.json(results);
+
+}catch(error){
+
+ res.status(500).json({
+  error:error.message
+ });
+
+}
 
 });
 
